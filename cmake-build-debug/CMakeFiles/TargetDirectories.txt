@@ -1,3 +1,0 @@
-C:/Users/simao/Desktop/UBI/SEGUNDO ANO/SO/Projeto/cmake-build-debug/CMakeFiles/edit_cache.dir
-C:/Users/simao/Desktop/UBI/SEGUNDO ANO/SO/Projeto/cmake-build-debug/CMakeFiles/Projeto.dir
-C:/Users/simao/Desktop/UBI/SEGUNDO ANO/SO/Projeto/cmake-build-debug/CMakeFiles/rebuild_cache.dir
