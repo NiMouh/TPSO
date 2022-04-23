@@ -1,4 +1,5 @@
 #include "csapp.h"
+#include "ListasLigadasSimples.h"
 
 typedef enum
 {
@@ -38,7 +39,7 @@ int main (int ARGUMENTS_AMOUNT, char** arguments)
         exit(0);
     }
 
-    const int   MAX_REQUESTS_HANDLED = atoi(arguments[3]);
+    const int MAX_REQUESTS_HANDLED = atoi(arguments[3]);
     if (MAX_REQUESTS_HANDLED <= 0)
     {
         fprintf (stderr, "Numero de pedidos possiveis deve ser maior que 0!\n");
