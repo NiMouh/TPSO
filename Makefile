@@ -12,14 +12,23 @@ LIB = -lpthread
 
 all: servidor adder cliente hashexample
 
-server: servidor.c csapp.o
-    $(CC) $(CFLAGS) -o servidor servidor.c csapp.o $(LIB)
+servidor: servidor.c csapp.o
+	$(CC) $(CFLAGS) -o servidor servidor.c csapp.o $(LIB)
 
 csapp.o:
-    $(CC) $(CFLAGS) -c csapp.c
+	$(CC) $(CFLAGS) -c csapp.c
 
 adder:
-    (cd cgi-bin; make)
+	(cd cgi-bin; make)
 
 hashexample:
-    (cd libtomcrypt ; make)
+	(cd libtomcrypt ; make)
+
+cliente: cliente.c
+	$(CC) $(CFLAGS) -o cliente cliente.c csapp.o $(LIB)
+
+
+clean:
+	rm -f *.o servidor *~
+	(cd cgi-bin; make clean)
+	(cd libtomcrypt ; make clean)

@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
 
 
 
-    /* Leituras das linhas da resposta . Os cabecalhos - Headers */
+    /* Leituras das linhas da resposta. Os cabecalhos — Headers */
     const int numeroDeHeaders = 5;
     Rio_readinitb(&rio, socket_file_descriptor);
     for (int k = 0; k < numeroDeHeaders; k++) {
@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "STATISTIC : %s", buf);
     }
 
-    //Ler o resto da resposta - o corpo de resposta.
+    //Ler o resto da resposta — o corpo de resposta.
     //Vamos ler em blocos caso que seja uma resposta grande.
     while ((nbytes = Rio_readn(socket_file_descriptor, buffer, BUFSIZ)) > 0) {
         if (DEBUG) fprintf(stderr, "debug: after a block read\n");
