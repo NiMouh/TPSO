@@ -1,4 +1,5 @@
 #include "csapp.h"
+#include "ListasLigadasSimples.h"
 
 typedef enum
 {
@@ -66,6 +67,7 @@ int main (int ARGUMENTS_AMOUNT, char** arguments)
 
     struct sockaddr_in client_address;
 
+    // CRIAR O APONTADOR PARA A LISTA E A LISTA TEM QUE TER (MAX_REQUEST_HANDLED) ELEMENTOS
     while (1)
     {
         unsigned int client_length = sizeof (client_address);

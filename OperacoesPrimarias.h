@@ -3,7 +3,7 @@
 #include "Aleatorio.h"
 
 #define N 3
-
+// PRECISAR TER ID DA THREAD E FILE SCRIPTED DA CONEXÃO
 typedef struct {
     int NIF;
     int data[N];
