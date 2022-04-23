@@ -27,7 +27,6 @@ hashexample:
 cliente: cliente.c
 	$(CC) $(CFLAGS) -o cliente cliente.c csapp.o $(LIB)
 
-
 clean:
 	rm -f *.o servidor *~
 	(cd cgi-bin; make clean)
