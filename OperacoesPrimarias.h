@@ -5,20 +5,20 @@
 #define N 3
 // PRECISAR TER ID DA THREAD E FILE SCRIPTED DA CONEXÃO
 typedef struct {
-    int NIF;
-    int data[N];
-    int NFatura;
-    float Pagamento;
+    int ID;
+    int Ficheiro;
+    int HTTP_REQUEST_EXEC;
+    int HTTP_STATIC_REQUEST;
+    int HTTP_DYNAMIC_REQUEST;
 } INFO;
 
 
 void mostrarElemento(INFO X) {
-    printf("%d - ", X.NIF);
-    for (int i = 0; i < N; i++) {
-        printf("%d - ", X.data[i]);
-    }
-    printf("%d - ", X.NFatura);
-    printf("%f\n", X.Pagamento);
+    printf("%d - ID DO THREAD\n", X.ID);
+    printf("%d - Ficheiro de Conexao\n", X.Ficheiro);
+    printf("%d - Quantidade de HTTP Requests executadas\n", X.HTTP_REQUEST_EXEC);
+    printf("%d - Quantidade de HTTP Static Requests executadas\n", X.HTTP_STATIC_REQUEST);
+    printf("%d - Quantidade de HTTP Dynamic Requests executadas\n", X.HTTP_DYNAMIC_REQUEST);
 }
 
 INFO criarElemento() {
