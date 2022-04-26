@@ -97,7 +97,6 @@ bool create_threads ()
     return true;
 }
 
-
 int main (int ARGUMENTS_AMOUNT, char ** arguments)
 {
     gettimeofday (&start, NULL);
