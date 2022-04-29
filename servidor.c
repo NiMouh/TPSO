@@ -1,175 +1,76 @@
+#include <stdlib.h>
+#include <stdbool.h>
+
 #include "csapp.h"
-#include "ListasLigadasSimples.h"
 
-typedef enum {
-    FIFO,
-    HPSC,
-    HPDC
-} SchedulingType;
+#include "data_types.h"
+#include "lists.h"
 
-typedef struct {
-    int ID;
-    int Ficheiro;
-    int HTTP_REQUEST_EXEC;
-    int HTTP_STATIC_REQUEST;
-    int HTTP_DYNAMIC_REQUEST;
-} THREAD;
-
-typedef struct timeval Time;
+// Declaracoes de Variaveis Globais
 Time start;
+// Time end;
 
-THREAD threads[MAX_THREADS - 1];
+int server_port;
+int max_threads;
+int max_requests_handled;
+SchedulingPolicy scheduling_policy;
 
 pthread_mutex_t lock_list_request;
 
-PNodo requests;
-
-void *thread() {
-
-}
-
-void doit(int fd);
-
-void read_requesthdrs(rio_t *rp);
-
-int parse_uri(char *uri, char *filename, char *cgiargs);
-
-void serve_static(int fd, char *filename, int filesize);
-
-void get_filetype(char *filename, char *filetype);
-
-void serve_dynamic(int fd, char *filename, char *cgiargs);
-
-void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
-
-
-int main(int ARGUMENTS_AMOUNT, char **arguments) {
-    gettimeofday(&start, NULL);
-
-    if (ARGUMENTS_AMOUNT != 5) {
-        fprintf(stderr, "Uso: server <porta> <nr_threads> <max_pedidos> <alg_escalonamento>\n");
-        exit(0);
-    }
-
-    const int PORT = atoi(arguments[1]);
-    const int MAX_THREADS = atoi(arguments[2]);
-    if (MAX_THREADS <= 0) {
-        fprintf(stderr, "Numero de threads deve ser maior que 0!\n");
-        exit(0);
-    }
-
-    const int MAX_REQUESTS_HANDLED = atoi(arguments[3]);
-    if (MAX_REQUESTS_HANDLED <= 0) {
-        fprintf(stderr, "Numero de pedidos possiveis deve ser maior que 0!\n");
-        exit(0);
-    }
-
-    SchedulingType scheduling_algorithm;
-    if (strcmp(arguments[4], "ANY") == 0)
-        scheduling_algorithm = FIFO;
-    else if (strcmp(arguments[4], "FIFO") == 0)
-        scheduling_algorithm = FIFO;
-    else if (strcmp(arguments[4], "HPSC") == 0)
-        scheduling_algorithm = HPSC;
-    else if (strcmp(arguments[4], "HPDC") == 0)
-        scheduling_algorithm = HPDC;
-    else {
-        fprintf(stderr, "Algoritmo de escalonamento inválido!\nOpcoes possiveis sao: ANY, FIFO, HPSC ou HPDC.\n");
-        exit(0);
-    }
-
-    fprintf(stderr, "Servidor : executando na porta <%d>\n", PORT);
-
-    int listen_file_descriptor = Open_listenfd(PORT);
-
-    struct sockaddr_in client_address;
-
-    // CRIAR O APONTADOR PARA A LISTA E A LISTA TEM QUE TER (MAX_REQUEST_HANDLED) ELEMENTOS
-
-    for (int i = 0; i < MAX_THREADS; i++) {
-        THREAD th;
-        pthread_create(&th.ID, NULL, (void *) thread, NULL);
-        th.HTTP_DYNAMIC_REQUEST = 0;
-        th.HTTP_STATIC_REQUEST = 0;
-        th.HTTP_REQUEST_EXEC = 0;
-        th.Ficheiro = -1;
-        threads[i] = th;
-    }
-
-    pthread_mutex_init(&lock_list_request, NULL);
-    pthread_mutex_lock(&lock_list_request);
-
-
-    while (1) {
-        if (!listaVazia(requests)) {
-            unsigned int client_length = sizeof(client_address);
-            int connection_descriptor = Accept(listen_file_descriptor, (SA *) &client_address,
-                                               &client_length);
-            requests = ins
-        }
-
-        //line:netp:tiny:accept
-        doit(connection_descriptor);        //line:netp:tiny:doit
-        Close(connection_descriptor);        //line:netp:tiny:close
-    }
-
-}
-
+Thread * threads;
+Requests requests;
 
 int numeroRequestStat = 0;
 
-/* $end tinymain */
-
-/*
- * doit - handle one HTTP request/response transaction
- */
-/* $begin doit */
-void doit(int fd) {
-    int is_static;
-    struct stat sbuf;
-    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char filename[MAXLINE], cgiargs[MAXLINE];
-    rio_t rio;
-
-    /* Read request line and headers */
-    Rio_readinitb(&rio, fd);
-    Rio_readlineb(&rio, buf, MAXLINE);    //line:netp:doit:readrequest
-    sscanf(buf, "%s %s %s", method, uri, version);    //line:netp:doit:parserequest
-    if (strcasecmp(method, "GET")) {                //line:netp:doit:beginrequesterr
-        clienterror(fd, method, "501", "Not Implemented", "Tiny does not implement this method");
-        return;
-    }                //line:netp:doit:endrequesterr
-    read_requesthdrs(&rio);    //line:netp:doit:readrequesthdrs
-
-    /* Parse URI from GET request */
-    is_static = parse_uri(uri, filename, cgiargs);    //line:netp:doit:staticcheck
-    if (stat(filename, &sbuf) < 0) {                //line:netp:doit:beginnotfound
-        clienterror(fd, filename, "404", "Not found", "Tiny couldn't find this file");
-        return;
-    }                //line:netp:doit:endnotfound
-
-    if (is_static) {                /* Serve static content */
-        if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {            //line:netp:doit:readable
-            clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
-            return;
-        }
-        serve_static(fd, filename, sbuf.st_size);    //line:netp:doit:servestatic
-    } else {                /* Serve dynamic content */
-        if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {            //line:netp:doit:executable
-            clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
-            return;
-        }
-        serve_dynamic(fd, filename, cgiargs);    //line:netp:doit:servedynamic
+// Declaracoes de Funcoes
+bool parse_arguments (int ARGUMENTS_AMOUNT, char ** arguments)
+{
+    if (ARGUMENTS_AMOUNT != 5)
+    {
+        fprintf (stderr, "Uso: server <porta> <nr_threads> <max_pedidos> <alg_escalonamento>\n");
+        return true;
     }
+
+    server_port = atoi (arguments[1]);
+    if (server_port <= 0)
+    {
+        fprintf (stderr, "Porta invalida\n");
+        return true;
+    }
+    
+    max_threads = atoi (arguments[2]);
+    if (max_threads <= 0)
+    {
+        fprintf (stderr, "Numero de threads deve ser maior que 0!\n");
+        return true;
+    }
+
+    max_requests_handled = atoi(arguments[3]);
+    if (max_requests_handled <= 0)
+    {
+        fprintf (stderr, "Numero de pedidos possiveis deve ser maior que 0!\n");
+        return true;
+    }
+
+    if (strcmp(arguments[4], "ANY") == 0)
+        scheduling_policy = FIFO;
+    else if (strcmp(arguments[4], "FIFO") == 0)
+        scheduling_policy = FIFO;
+    else if (strcmp(arguments[4], "HPSC") == 0)
+        scheduling_policy = HPSC;
+    else if (strcmp(arguments[4], "HPDC") == 0)
+        scheduling_policy = HPDC;
+    else
+    {
+        fprintf (stderr, "Algoritmo de escalonamento inválido!\nOpcoes possiveis sao: ANY, FIFO, HPSC ou HPDC.\n");
+        return true;
+    }
+
+    return false;
 }
 
-/* $end doit */
-
-/*
- * read_requesthdrs - read and parse HTTP request headers
- */
-/* $begin read_requesthdrs */
-void read_requesthdrs(rio_t *rp) {
+void read_requesthdrs(rio_t *rp)
+{
     char buf[MAXLINE];
 
     Rio_readlineb(rp, buf, MAXLINE);
@@ -180,14 +81,8 @@ void read_requesthdrs(rio_t *rp) {
     return;
 }
 
-/* $end read_requesthdrs */
-
-/*
- * parse_uri - parse URI into filename and CGI args
- *             return 0 if dynamic content, 1 if static
- */
-/* $begin parse_uri */
-int parse_uri(char *uri, char *filename, char *cgiargs) {
+int parse_uri(char *uri, char *filename, char *cgiargs)
+{
     char *ptr;
 
     if (!strstr(uri, "cgi-bin")) {                /* Static content *///line:netp:parseuri:isstatic
@@ -210,13 +105,8 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
     }
 }
 
-/* $end parse_uri */
-
-/*
- * serve_static - copy a file back to the client
- */
-/* $begin serve_static */
-void serve_static(int fd, char *filename, int filesize) {
+void serve_static(int fd, char *filename, int filesize)
+{
     int srcfd;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
@@ -237,11 +127,8 @@ void serve_static(int fd, char *filename, int filesize) {
     Munmap(srcp, filesize);    //line:netp:servestatic:munmap
 }
 
-/*
- * get_filetype - derive file type from file name
- * Deverá adicionar mais tipos
- */
-void get_filetype(char *filename, char *filetype) {
+void get_filetype(char *filename, char *filetype)
+{
     if (strstr(filename, ".html"))
         strcpy(filetype, "text/html");
     else if (strstr(filename, ".gif"))
@@ -252,13 +139,8 @@ void get_filetype(char *filename, char *filetype) {
         strcpy(filetype, "text/plain");
 }
 
-/* $end serve_static */
-
-/*
- * serve_dynamic - run a CGI program on behalf of the client
- */
-/* $begin serve_dynamic */
-void serve_dynamic(int fd, char *filename, char *cgiargs) {
+void serve_dynamic(int fd, char *filename, char *cgiargs)
+{
     char buf[MAXLINE], *emptylist[] = {NULL};
 
     int pipefd[2];
@@ -295,13 +177,8 @@ void serve_dynamic(int fd, char *filename, char *cgiargs) {
 
 }
 
-/* $end serve_dynamic */
-
-/*
- * clienterror - returns an error message to the client
- */
-/* $begin clienterror */
-void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg) {
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg)
+{
     char buf[MAXLINE], body[MAXBUF];
 
     /* Build the HTTP response body */
@@ -329,4 +206,159 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
     Rio_writen(fd, body, strlen(body));
 }
 
-/* $end clienterror */
+void doit(int fd) {
+    int is_static;
+    struct stat sbuf;
+    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+    char filename[MAXLINE], cgiargs[MAXLINE];
+    rio_t rio;
+
+    /* Read request line and headers */
+    Rio_readinitb(&rio, fd);
+    Rio_readlineb(&rio, buf, MAXLINE);    //line:netp:doit:readrequest
+    sscanf(buf, "%s %s %s", method, uri, version);    //line:netp:doit:parserequest
+
+
+
+    
+    if (strcasecmp(method, "GET")) {                //line:netp:doit:beginrequesterr
+        clienterror(fd, method, "501", "Not Implemented", "Tiny does not implement this method");
+        return;
+    }                //line:netp:doit:endrequesterr
+    read_requesthdrs(&rio);    //line:netp:doit:readrequesthdrs
+
+    /* Parse URI from GET request */
+    is_static = parse_uri(uri, filename, cgiargs);    //line:netp:doit:staticcheck
+    if (stat(filename, &sbuf) < 0) {                //line:netp:doit:beginnotfound
+        clienterror(fd, filename, "404", "Not found", "Tiny couldn't find this file");
+        return;
+    }                //line:netp:doit:endnotfound
+
+    if (is_static) {                /* Serve static content */
+        if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {            //line:netp:doit:readable
+            clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
+            return;
+        }
+        serve_static(fd, filename, sbuf.st_size);    //line:netp:doit:servestatic
+    } else {                /* Serve dynamic content */
+        if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {            //line:netp:doit:executable
+            clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
+            return;
+        }
+        serve_dynamic(fd, filename, cgiargs);    //line:netp:doit:servedynamic
+    }
+}
+
+void * thread_startup (void * position)
+{
+    while (true)
+    {
+        pthread_mutex_lock (&lock_list_request);
+            fprintf (stderr, "Thread %lu: LOCK\n", pthread_self ());
+            bool list_is_empty = is_list_empty (requests);
+            fprintf (stderr, "Thread %lu: estado da lista : %s\n", pthread_self (), list_is_empty ? "vazia" : "nao vazia");
+            fprintf (stderr, "Thread %lu: UNLOCK\n", pthread_self ());
+        pthread_mutex_unlock (&lock_list_request);
+
+        if (!list_is_empty)
+        {
+            int thread_position = (int) position;
+            
+            pthread_mutex_lock (&lock_list_request);
+                fprintf (stderr, "Thread %lu: LOCK\n", pthread_self ());
+
+                int client_fd = requests->client_fd;
+                fprintf (stderr, "Thread %lu: conexao detectada (%d)\n", pthread_self (), client_fd);
+
+                fprintf (stderr, "Thread %lu: executando conexao (%d)\n", pthread_self (), client_fd);
+                doit (client_fd);
+                Close(client_fd);
+
+                fprintf (stderr, "Thread %lu: removendo conexao (%d)\n", pthread_self (), client_fd);
+                requests = remove_request (client_fd, requests);
+                fprintf (stderr, "Thread %lu: conexao removida (%d)\n", pthread_self (), client_fd);
+                fprintf (stderr, "Thread %lu: estado da lista %s\n", pthread_self (), is_list_empty (requests) ? "vazia" : "nao vazia");
+
+                getchar();
+                
+                fprintf (stderr, "Thread %lu: UNLOCK\n", pthread_self ());
+            pthread_mutex_unlock(&lock_list_request);
+        }
+    }    
+    return NULL;
+}
+
+bool create_threads ()
+{
+    threads = malloc (max_threads * sizeof (Thread)); // TODO: libertar memoria
+    if (threads == NULL) {
+        fprintf (stderr, "Erro ao alocar memoria para threads!\n");
+        return false;
+    }
+
+    for (int index = 0; index < max_threads; index++)
+    {
+        Thread thread_prototype;
+        int position = index;
+        pthread_create (&(thread_prototype.id), NULL, thread_startup, (void * ) position);
+
+        thread_prototype.http_request_executions         = 0;
+        thread_prototype.http_dynamic_content_executions = 0;
+        thread_prototype.http_static_content_executions  = 0;
+        threads[index] = thread_prototype;
+    }
+
+    return true;
+}
+
+int main (int ARGUMENTS_AMOUNT, char ** arguments)
+{
+    gettimeofday (&start, NULL);
+
+    bool exists_invalid_arguments = parse_arguments (ARGUMENTS_AMOUNT, arguments);
+    if (exists_invalid_arguments)
+        exit (EXIT_FAILURE);
+
+    bool threads_created = create_threads ();
+    if (threads_created == false)
+        exit (EXIT_FAILURE);
+
+    fprintf (stderr, "Servidor : executando na porta <%d>\n", server_port);
+
+    int listener_fd = Open_listenfd(server_port);
+
+    struct sockaddr_in client_address;
+
+    pthread_mutex_init (&lock_list_request, NULL);
+
+    fprintf (stderr, "Servidor : iniciando o loop de conexoes\n");
+    fprintf (stderr, "Servidor : estado da lista: %s\n", is_list_empty (requests) ? "vazia" : "nao vazia");
+
+    while (true)
+    {
+        pthread_mutex_lock (&lock_list_request);
+            fprintf (stderr, "Servidor : LOCK\n");
+            int list_size = size_of_list (requests);
+            fprintf (stderr, "Tamanho da lista de requisicoes: %d\n", list_size);
+            fprintf (stderr, "Servidor : UNLOCK\n");
+        pthread_mutex_unlock (&lock_list_request);
+
+        if ( list_size < max_requests_handled)
+        {
+            socklen_t client_address_size = sizeof(client_address);
+            int client_fd = Accept(listener_fd, (SA *) &client_address, &client_address_size);
+            fprintf (stderr, "Servidor: conexao recebida (%d)\n", client_fd);
+            
+            Requests request = create_request (client_fd);
+
+            pthread_mutex_lock (&lock_list_request);
+                fprintf (stderr, "Servidor : LOCK\n");
+                requests = append_right (request->client_fd, requests);
+                fprintf (stderr, "Servidor : request %d adicionado\n", requests->client_fd);
+                fprintf (stderr, "Servidor : estado da lista: %s\n", is_list_empty (requests) ? "vazia" : "nao vazia");
+                fprintf (stderr, "Servidor : UNLOCK\n");
+            pthread_mutex_unlock (&lock_list_request);
+            
+        }
+    }
+}
