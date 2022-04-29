@@ -18,16 +18,17 @@ typedef struct
     int http_dynamic_content_executions;
 } Thread;
 
+/*
 typedef enum
 {
     STATIC,
     DYNAMIC
 } RequestType;
+*/
 
 typedef struct Request
 {
     int client_fd;
-    RequestType type;
     struct Request * next;
 } Request;
 

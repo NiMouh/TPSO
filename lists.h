@@ -6,16 +6,14 @@ Requests create_requests_list ()
     return list;
 }
 
-Requests create_request (int client_fd, RequestType type)
+Requests create_request (int client_fd)
 {
     Requests request = (Requests) malloc (sizeof(Request));
     if (request == NULL)
         return NULL;
         
     request->client_fd = client_fd;
-    request->type = type;
     request->next = NULL;
-
     return request;
 }
 
@@ -44,9 +42,9 @@ int size_of_list (Requests list)
     return size;
 }
 
-Requests append_left (int client_fd, RequestType type, Requests list)
+Requests append_left (int client_fd, Requests list)
 {
-    Requests list_aux = create_request (client_fd, type);
+    Requests list_aux = create_request (client_fd);
     if (list_aux == NULL)
         return list;
     list_aux->next = list;
@@ -54,15 +52,16 @@ Requests append_left (int client_fd, RequestType type, Requests list)
     return list;
 }
 
-Requests append_right (int client_fd, RequestType type, Requests list)
+Requests append_right (int client_fd, Requests list)
 {
     Requests new_request, list_aux;
-    new_request = create_request (client_fd, type);
+    new_request = create_request (client_fd);
     if (new_request == NULL)
         return list;
 
-    if (list == NULL)
-        return new_request;
+    if (list == NULL){
+        return new_request;   
+    }
 
     list_aux = list;
     while (list_aux->next != NULL)
@@ -72,23 +71,31 @@ Requests append_right (int client_fd, RequestType type, Requests list)
     return list;
 }
 
-Requests remove_request (int client_fd, RequestType type, Requests list, Requests list_aux)
+Requests search_antecessor (int client_fd, Requests list)
 {
-    Requests request;
-    if (compare_request (list->client_fd, list->type, client_fd, type) == 0)
+    Requests ant = NULL;
+    while (list != NULL && list->client_fd != client_fd)
     {
-        request = list;
+        ant = list;
         list = list->next;
-        free_request (request);
-        return list;
     }
-    if (compare_request (list_aux->next->client_fd, list_aux->next->type, client_fd, type) == 0)
-    {
-        request = list_aux->next;
-        list_aux->next = request->next;
-        free_request (request);
-        return list;
-    }
+    return ant;
+}
 
-    return remove_request (client_fd, type, list, list_aux->next);
+Requests remove_request (int client_fd, Requests list)
+{
+    Requests list1, list_antecessor;
+    list_antecessor = search_antecessor (client_fd, list);
+    if (list_antecessor == NULL)
+    {
+        list1 = list;
+        list = list->next;
+    }
+    else
+    {
+        list1 = list_antecessor->next;
+        list_antecessor->next = list1->next;
+    }
+    free_request (list1);
+    return list;
 }
