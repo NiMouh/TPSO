@@ -6,9 +6,9 @@
 #include "data_types.h"
 #include "lists.h"
 
-// Declaracoes de Variaveis Globais
+
 Time start;
-// Time end;
+Time end;
 
 int server_port;
 int max_threads;
@@ -18,8 +18,11 @@ SchedulingPolicy scheduling_policy;
 pthread_mutex_t lock_list_request;
 
 Thread * threads;
-Requests requests;
+Requests * requests;
 
+// Estatisticas
+int stat_req_arrival_count = 0; // Quantidade de requisicoes recebidas
+int stat_req_dispatch_count = 0; // Quantidade de requisicoes despachadas
 int numeroRequestStat = 0;
 
 // Declaracoes de Funcoes
@@ -206,7 +209,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
     Rio_writen(fd, body, strlen(body));
 }
 
-void doit(int fd) {
+void doit(int fd, int thread_index) {
     int is_static;
     struct stat sbuf;
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
@@ -217,9 +220,6 @@ void doit(int fd) {
     Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);    //line:netp:doit:readrequest
     sscanf(buf, "%s %s %s", method, uri, version);    //line:netp:doit:parserequest
-
-
-
     
     if (strcasecmp(method, "GET")) {                //line:netp:doit:beginrequesterr
         clienterror(fd, method, "501", "Not Implemented", "Tiny does not implement this method");
@@ -239,14 +239,35 @@ void doit(int fd) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
             return;
         }
+        Thread t = threads[thread_index];
+        t.http_static_content_executions++;
+        threads[thread_index] = t;
         serve_static(fd, filename, sbuf.st_size);    //line:netp:doit:servestatic
     } else {                /* Serve dynamic content */
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {            //line:netp:doit:executable
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
             return;
         }
+        Thread t = threads[thread_index];
+        t.http_dynamic_content_executions++;
+        threads[thread_index] = t;
         serve_dynamic(fd, filename, cgiargs);    //line:netp:doit:servedynamic
     }
+}
+
+ContentType get_content_type (int client_fd)
+{
+    rio_t rio;
+    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+
+    Rio_readinitb(&rio, client_fd);
+    Rio_readlineb(&rio, buf, MAXLINE);    //line:netp:doit:readrequest
+    sscanf(buf, "%s %s %s", method, uri, version);    //line:netp:doit:parserequest
+
+    if (!strstr(uri, "cgi-bin"))
+        return DYNAMIC;
+    else
+        return STATIC;
 }
 
 void * thread_startup (void * position)
@@ -254,36 +275,98 @@ void * thread_startup (void * position)
     while (true)
     {
         pthread_mutex_lock (&lock_list_request);
-            fprintf (stderr, "Thread %lu: LOCK\n", pthread_self ());
-            bool list_is_empty = is_list_empty (requests);
-            fprintf (stderr, "Thread %lu: estado da lista : %s\n", pthread_self (), list_is_empty ? "vazia" : "nao vazia");
-            fprintf (stderr, "Thread %lu: UNLOCK\n", pthread_self ());
-        pthread_mutex_unlock (&lock_list_request);
 
-        if (!list_is_empty)
-        {
-            int thread_position = (int) position;
-            
-            pthread_mutex_lock (&lock_list_request);
-                fprintf (stderr, "Thread %lu: LOCK\n", pthread_self ());
+            bool list_is_empty;
 
-                int client_fd = requests->client_fd;
-                fprintf (stderr, "Thread %lu: conexao detectada (%d)\n", pthread_self (), client_fd);
+            if (scheduling_policy == FIFO)
+                list_is_empty = is_list_empty (*requests);
+            else
+            {
+                list_is_empty = is_list_empty (requests[0]) && is_list_empty (requests[1]); 
+            }
 
-                fprintf (stderr, "Thread %lu: executando conexao (%d)\n", pthread_self (), client_fd);
-                doit (client_fd);
-                Close(client_fd);
 
-                fprintf (stderr, "Thread %lu: removendo conexao (%d)\n", pthread_self (), client_fd);
-                requests = remove_request (client_fd, requests);
-                fprintf (stderr, "Thread %lu: conexao removida (%d)\n", pthread_self (), client_fd);
-                fprintf (stderr, "Thread %lu: estado da lista %s\n", pthread_self (), is_list_empty (requests) ? "vazia" : "nao vazia");
+            if (!list_is_empty)
+            {
+                stat_req_dispatch_count++;
 
-                getchar();
+                gettimeofday (&end, NULL);
+
+                long time_difference = (end.tv_sec - start.tv_sec);
+                printf ("Dispatched time: %ld\n", time_difference);
+
+                (*requests)->dispatch_time;
+
+                Thread thread = threads[(int) position];
+                thread.http_request_executions++;
+                threads[(int) position] = thread;
+
+                printf ("Thread %d:http requests %d\n", (int) position, thread.http_request_executions);
+                printf ("Thread %d:http static %d\n", (int) position, thread.http_static_content_executions);
+                printf ("Thread %d:http dynamic %d\n", (int) position, thread.http_dynamic_content_executions);
+
+                printf ("Stat request dispatch count: %d\n", stat_req_dispatch_count);
+                printf ("Stat request dispatch time: %ld\n", time_difference);
+
+                int thread_position = (int) position;
                 
-                fprintf (stderr, "Thread %lu: UNLOCK\n", pthread_self ());
-            pthread_mutex_unlock(&lock_list_request);
-        }
+                int client_fd;
+
+                switch (scheduling_policy)
+                {
+                    case FIFO:
+                        client_fd = (*requests)->client_fd;
+
+                        doit (client_fd, position);
+                        Close(client_fd);
+
+                        *requests = remove_request (client_fd, *requests);
+                        break;
+                    case HPSC:
+                        if (!is_list_empty (requests[0]))
+                        {
+                            client_fd = requests[0]->client_fd;
+
+                            doit (client_fd, position);
+                            Close(client_fd);
+
+                            requests[0] = remove_request (client_fd, requests[0]);
+                        }
+                        else
+                        {
+                            client_fd = requests[1]->client_fd;
+
+                            doit (client_fd, position);
+                            Close(client_fd);
+
+                            requests[1] = remove_request (client_fd, requests[1]);
+                        }
+                        break;
+                    case HPDC:
+                        if (!is_list_empty (requests[1]))
+                        {
+                            client_fd = requests[1]->client_fd;
+
+                            doit (client_fd, position);
+                            Close(client_fd);
+
+                            requests[1] = remove_request (client_fd, requests[1]);
+                        }
+                        else
+                        {
+                            client_fd = requests[0]->client_fd;
+
+                            doit (client_fd, position);
+                            Close(client_fd);
+
+                            requests[0] = remove_request (client_fd, requests[0]);
+                        }
+                        break;
+                }       
+                    
+            }
+
+        pthread_mutex_unlock(&lock_list_request);
     }    
     return NULL;
 }
@@ -319,6 +402,25 @@ int main (int ARGUMENTS_AMOUNT, char ** arguments)
     if (exists_invalid_arguments)
         exit (EXIT_FAILURE);
 
+    pthread_mutex_init (&lock_list_request, NULL);
+
+    pthread_mutex_lock (&lock_list_request);
+
+        switch (scheduling_policy)
+        {
+            case FIFO:
+                requests = (Requests *) malloc (sizeof (Requests));
+                break;
+            case HPSC:
+                requests = (Requests *) malloc (sizeof (Requests) * 2);
+                break;
+            case HPDC:
+                requests = (Requests *) malloc (sizeof (Requests) * 2);
+                break;
+        }
+
+    pthread_mutex_unlock (&lock_list_request);
+
     bool threads_created = create_threads ();
     if (threads_created == false)
         exit (EXIT_FAILURE);
@@ -329,18 +431,21 @@ int main (int ARGUMENTS_AMOUNT, char ** arguments)
 
     struct sockaddr_in client_address;
 
-    pthread_mutex_init (&lock_list_request, NULL);
 
     fprintf (stderr, "Servidor : iniciando o loop de conexoes\n");
-    fprintf (stderr, "Servidor : estado da lista: %s\n", is_list_empty (requests) ? "vazia" : "nao vazia");
+    fprintf (stderr, "Servidor : estado da lista: %s\n", is_list_empty (*requests) ? "vazia" : "nao vazia");
 
     while (true)
     {
         pthread_mutex_lock (&lock_list_request);
-            fprintf (stderr, "Servidor : LOCK\n");
-            int list_size = size_of_list (requests);
-            fprintf (stderr, "Tamanho da lista de requisicoes: %d\n", list_size);
-            fprintf (stderr, "Servidor : UNLOCK\n");
+
+            int list_size;
+
+            if (scheduling_policy == FIFO)
+                list_size = size_of_list (*requests);
+            else
+                list_size = size_of_list (requests[0]) + size_of_list (requests[1]);
+
         pthread_mutex_unlock (&lock_list_request);
 
         if ( list_size < max_requests_handled)
@@ -348,15 +453,42 @@ int main (int ARGUMENTS_AMOUNT, char ** arguments)
             socklen_t client_address_size = sizeof(client_address);
             int client_fd = Accept(listener_fd, (SA *) &client_address, &client_address_size);
             fprintf (stderr, "Servidor: conexao recebida (%d)\n", client_fd);
-            
-            Requests request = create_request (client_fd);
 
             pthread_mutex_lock (&lock_list_request);
-                fprintf (stderr, "Servidor : LOCK\n");
-                requests = append_right (request->client_fd, requests);
-                fprintf (stderr, "Servidor : request %d adicionado\n", requests->client_fd);
-                fprintf (stderr, "Servidor : estado da lista: %s\n", is_list_empty (requests) ? "vazia" : "nao vazia");
-                fprintf (stderr, "Servidor : UNLOCK\n");
+
+                Requests request = create_request (client_fd);
+
+
+                /* Estatisticas
+                gettimeofday (&end, NULL);
+
+                long time_difference = (end.tv_sec - start.tv_sec);
+                printf ("Arrival time: %ld\n", time_difference);
+                request->arrival_time = time_difference;
+
+                stat_req_arrival_count++;
+                */
+
+
+
+                switch (scheduling_policy)
+                {
+                    case FIFO:
+                        *requests = append_right (request->client_fd, *requests);
+                        break;
+                    case HPSC:
+                        if (get_content_type (client_fd) == STATIC)
+                            requests[0] = append_right (request->client_fd, requests[0]);
+                        else
+                            requests[1] = append_right (request->client_fd, requests[1]);
+                        break;
+                    case HPDC:
+                        if (get_content_type (client_fd) == STATIC)
+                            requests[1] = append_right (request->client_fd, requests[1]);
+                        else
+                            requests[0] = append_right (request->client_fd, requests[0]);
+                        break;
+                }
             pthread_mutex_unlock (&lock_list_request);
             
         }
