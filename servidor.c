@@ -16,6 +16,7 @@ int max_requests_handled;
 SchedulingPolicy scheduling_policy;
 
 pthread_mutex_t lock_list_request;
+pthread_mutex_t lock_statistics;
 
 Thread * threads;
 Requests * requests;
@@ -23,7 +24,7 @@ Requests * requests;
 // Estatisticas
 int stat_req_arrival_count = 0; // Quantidade de requisicoes recebidas
 int stat_req_dispatch_count = 0; // Quantidade de requisicoes despachadas
-int numeroRequestStat = 0;
+int stat_req_completed_count = 0; // Quantidade de requisicoes concluidas
 
 // Declaracoes de Funcoes
 bool parse_arguments (int ARGUMENTS_AMOUNT, char ** arguments)
@@ -108,18 +109,44 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
     }
 }
 
-void serve_static(int fd, char *filename, int filesize)
+void serve_static(int fd, char *filename, int filesize, int thread_index, Requests *request)
 {
     int srcfd;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
+    pthread_mutex_lock (&lock_statistics);
+        stat_req_completed_count++;
+    pthread_mutex_unlock (&lock_statistics);
+
+     gettimeofday (&end, NULL);
+
+    long time_difference = (end.tv_sec - start.tv_sec);
+
+
     /* Send response headers to client */
     get_filetype(filename, filetype);    //line:netp:servestatic:getfiletype
     sprintf(buf, "HTTP/1.0 200 OK\r\n");    //line:netp:servestatic:beginserve
-    sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
-    sprintf(buf, "%sRequestStat: %d\r\n", buf, numeroRequestStat++);
+    sprintf(buf, "%sServidor: Tiny Web Server\r\n", buf);
+    sprintf(buf, "%sStatisticas \r\n", buf);
     sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
-    sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
+    sprintf(buf, "%sContent-type: %s\r\n", buf, filetype);
+    pthread_mutex_lock (&lock_statistics);
+        sprintf(buf, "%sServidor:\r\n" , buf);
+        sprintf(buf, "%sRequisicoes recebidas: %d\r\n", buf, stat_req_arrival_count);
+        sprintf(buf, "%sRequisicoes despachadas: %d\r\n", buf, stat_req_dispatch_count);
+        sprintf(buf, "%sRequisicoes concluidas: %d\r\n", buf, stat_req_completed_count);
+
+        sprintf(buf, "%sRequisicao:\r\n", buf);
+        sprintf(buf, "%sTempo de chegada: %d\r\n", buf, (*request)->arrival_time);
+        sprintf(buf, "%sHora de Despacho: %d\r\n", buf, (*request)->dispatch_time);
+        sprintf(buf, "%sHora de Conclusao: %d\r\n", buf, time_difference);
+
+        sprintf(buf, "%sThread %d:\r\n", buf, thread_index);
+        sprintf(buf, "%sRequisicoes de Http recebidas: %d\r\n", buf, threads[thread_index].http_request_executions);
+        sprintf(buf, "%sRequisicoes de Http Estaticas recebidas: %d\r\n", buf, threads[thread_index].http_static_content_executions);
+        sprintf(buf, "%sRequisicoes de Http Dinamicas recebidas: %d\r\n\r\n", buf, threads[thread_index].http_dynamic_content_executions);
+
+    pthread_mutex_unlock (&lock_statistics);
     Rio_writen(fd, buf, strlen(buf));    //line:netp:servestatic:endserve
 
     /* Send response body to client */
@@ -171,7 +198,6 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
     /* Generate the HTTP response */
     sprintf(buf, "HTTP/1.0 200 OK\r\n");    //line:netp:servestatic:beginserve
     sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
-    sprintf(buf, "%sRequestStat: %d\r\n", buf, numeroRequestStat++);
     sprintf(buf, "%sContent-length: %d\r\n", buf, contentLength);
     sprintf(buf, "%sContent-type: text/html\r\n\r\n", buf);
     Rio_writen(fd, buf, strlen(buf));    //line:netp:servestatic:endserve
@@ -197,7 +223,6 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
     Rio_writen(fd, buf, strlen(buf));
 
     sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
-    sprintf(buf, "%sRequestStat: %d\r\n", buf, numeroRequestStat++);
     Rio_writen(fd, buf, strlen(buf));
 
     sprintf(buf, "Content-length: %d\r\n\r\n", (int) strlen(body));
@@ -209,7 +234,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
     Rio_writen(fd, body, strlen(body));
 }
 
-void doit(int fd, int thread_index) {
+void doit(int fd, int thread_index, Requests *requests) {
     int is_static;
     struct stat sbuf;
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
@@ -242,7 +267,7 @@ void doit(int fd, int thread_index) {
         Thread t = threads[thread_index];
         t.http_static_content_executions++;
         threads[thread_index] = t;
-        serve_static(fd, filename, sbuf.st_size);    //line:netp:doit:servestatic
+        serve_static(fd, filename, sbuf.st_size, thread_index, requests);    //line:netp:doit:servestatic
     } else {                /* Serve dynamic content */
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {            //line:netp:doit:executable
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
@@ -288,25 +313,19 @@ void * thread_startup (void * position)
 
             if (!list_is_empty)
             {
-                stat_req_dispatch_count++;
+                pthread_mutex_lock (&lock_statistics);
+                    stat_req_dispatch_count++;
+                pthread_mutex_unlock (&lock_statistics);
 
                 gettimeofday (&end, NULL);
 
                 long time_difference = (end.tv_sec - start.tv_sec);
-                printf ("Dispatched time: %ld\n", time_difference);
 
-                (*requests)->dispatch_time;
+                (*requests)->dispatch_time = time_difference;
 
                 Thread thread = threads[(int) position];
                 thread.http_request_executions++;
                 threads[(int) position] = thread;
-
-                printf ("Thread %d:http requests %d\n", (int) position, thread.http_request_executions);
-                printf ("Thread %d:http static %d\n", (int) position, thread.http_static_content_executions);
-                printf ("Thread %d:http dynamic %d\n", (int) position, thread.http_dynamic_content_executions);
-
-                printf ("Stat request dispatch count: %d\n", stat_req_dispatch_count);
-                printf ("Stat request dispatch time: %ld\n", time_difference);
 
                 int thread_position = (int) position;
                 
@@ -317,7 +336,7 @@ void * thread_startup (void * position)
                     case FIFO:
                         client_fd = (*requests)->client_fd;
 
-                        doit (client_fd, position);
+                        doit (client_fd, position, requests);
                         Close(client_fd);
 
                         *requests = remove_request (client_fd, *requests);
@@ -327,7 +346,7 @@ void * thread_startup (void * position)
                         {
                             client_fd = requests[0]->client_fd;
 
-                            doit (client_fd, position);
+                            doit (client_fd, position, requests);
                             Close(client_fd);
 
                             requests[0] = remove_request (client_fd, requests[0]);
@@ -336,7 +355,7 @@ void * thread_startup (void * position)
                         {
                             client_fd = requests[1]->client_fd;
 
-                            doit (client_fd, position);
+                            doit (client_fd, position, requests);
                             Close(client_fd);
 
                             requests[1] = remove_request (client_fd, requests[1]);
@@ -347,7 +366,7 @@ void * thread_startup (void * position)
                         {
                             client_fd = requests[1]->client_fd;
 
-                            doit (client_fd, position);
+                            doit (client_fd, position, requests);
                             Close(client_fd);
 
                             requests[1] = remove_request (client_fd, requests[1]);
@@ -356,7 +375,7 @@ void * thread_startup (void * position)
                         {
                             client_fd = requests[0]->client_fd;
 
-                            doit (client_fd, position);
+                            doit (client_fd, position, requests);
                             Close(client_fd);
 
                             requests[0] = remove_request (client_fd, requests[0]);
@@ -458,18 +477,11 @@ int main (int ARGUMENTS_AMOUNT, char ** arguments)
 
                 Requests request = create_request (client_fd);
 
-
-                /* Estatisticas
                 gettimeofday (&end, NULL);
 
                 long time_difference = (end.tv_sec - start.tv_sec);
                 printf ("Arrival time: %ld\n", time_difference);
                 request->arrival_time = time_difference;
-
-                stat_req_arrival_count++;
-                */
-
-
 
                 switch (scheduling_policy)
                 {
@@ -489,6 +501,10 @@ int main (int ARGUMENTS_AMOUNT, char ** arguments)
                             requests[0] = append_right (request->client_fd, requests[0]);
                         break;
                 }
+            pthread_mutex_unlock (&lock_list_request);
+
+            pthread_mutex_lock (&lock_list_request);
+                stat_req_arrival_count++;
             pthread_mutex_unlock (&lock_list_request);
             
         }

@@ -94,37 +94,19 @@ void *cliente(void *arg) {
 
                 /* Send HTTP request. */
                 Rio_writen(socket_file_descriptor, request, request_len);
+              
+              // Leitura do corpo da resposta
+              if (DEBUG) fprintf(stderr, "debug: antes da primeira leitura\n");
 
-                /* Read the response. */
-                if (DEBUG) fprintf(stderr, "debug: before first read\n");
+              while ((nbytes = Rio_readn(socket_file_descriptor, buffer, BUFSIZ)) > 0) {
+                  if (DEBUG) fprintf(stderr, "debug: apos leitura de bloco\n");
 
-                rio_t rio;
-                char buf[MAXLINE];
+                  Rio_writen(STDOUT_FILENO, buffer, nbytes);
+              }
 
+              if (DEBUG) fprintf(stderr, "debug: apos ultima leitura\n");
 
-
-                /* Leituras das linhas da resposta. Os cabecalhos — Headers */
-                const int numeroDeHeaders = 5;
-                Rio_readinitb(&rio, socket_file_descriptor);
-                for (int k = 0; k < numeroDeHeaders; k++) {
-                    Rio_readlineb(&rio, buf, MAXLINE);
-
-                    //Envio das estatisticas para o canal de standard error
-                    if (strstr(buf, "Stat") != NULL)
-                        fprintf(stderr, "STATISTIC : %s", buf);
-                }
-
-                //Ler o resto da resposta — o corpo de resposta.
-                //Vamos ler em blocos caso que seja uma resposta grande.
-                while ((nbytes = Rio_readn(socket_file_descriptor, buffer, BUFSIZ)) > 0) {
-                    if (DEBUG) fprintf(stderr, "debug: after a block read\n");
-                    //commentar a lina seguinte se não quiser ver o output
-                    Rio_writen(STDOUT_FILENO, buffer, nbytes);
-                }
-
-                if (DEBUG) fprintf(stderr, "debug: after last read\n");
-
-                Close(socket_file_descriptor);
+              Close(socket_file_descriptor);
 
             }
         }
@@ -145,7 +127,7 @@ int main(int argc, char **argv) {
         printf("N must be less than %d\n", MAX_THREADS);
         N = MAX_THREADS;
     }
-
+  
     // Declare a thread array with N elements malloc
     pthread_t *threads = malloc(N * sizeof(pthread_t));
 
