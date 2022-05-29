@@ -169,7 +169,7 @@ void get_filetype(char *filename, char *filetype)
         strcpy(filetype, "text/plain");
 }
 
-void serve_dynamic(int fd, char *filename, char *cgiargs)
+void serve_dynamic(int fd, char *filename, char *cgiargs, int thread_index, Requests *request)
 {
     char buf[MAXLINE], *emptylist[] = {NULL};
 
@@ -194,12 +194,37 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
     int contentLength = read(pipefd[0], content, 1024);
     Wait(NULL);            /* Parent waits for and reaps child *///line:netp:servedynamic:wait
 
+    pthread_mutex_lock (&lock_statistics);
+        stat_req_completed_count++;
+    pthread_mutex_unlock (&lock_statistics);
+
+     gettimeofday (&end, NULL);
+
+    long time_difference = (end.tv_sec - start.tv_sec);
+
 
     /* Generate the HTTP response */
     sprintf(buf, "HTTP/1.0 200 OK\r\n");    //line:netp:servestatic:beginserve
     sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
     sprintf(buf, "%sContent-length: %d\r\n", buf, contentLength);
     sprintf(buf, "%sContent-type: text/html\r\n\r\n", buf);
+    pthread_mutex_lock (&lock_statistics);
+        sprintf(buf, "%sServidor:\r\n" , buf);
+        sprintf(buf, "%sRequisicoes recebidas: %d\r\n", buf, stat_req_arrival_count);
+        sprintf(buf, "%sRequisicoes despachadas: %d\r\n", buf, stat_req_dispatch_count);
+        sprintf(buf, "%sRequisicoes concluidas: %d\r\n", buf, stat_req_completed_count);
+
+        sprintf(buf, "%sRequisicao:\r\n", buf);
+        sprintf(buf, "%sTempo de chegada: %d\r\n", buf, (*request)->arrival_time);
+        sprintf(buf, "%sHora de Despacho: %d\r\n", buf, (*request)->dispatch_time);
+        sprintf(buf, "%sHora de Conclusao: %d\r\n", buf, time_difference);
+
+        sprintf(buf, "%sThread %d:\r\n", buf, thread_index);
+        sprintf(buf, "%sRequisicoes de Http recebidas: %d\r\n", buf, threads[thread_index].http_request_executions);
+        sprintf(buf, "%sRequisicoes de Http Estaticas recebidas: %d\r\n", buf, threads[thread_index].http_static_content_executions);
+        sprintf(buf, "%sRequisicoes de Http Dinamicas recebidas: %d\r\n\r\n", buf, threads[thread_index].http_dynamic_content_executions);
+
+    pthread_mutex_unlock (&lock_statistics);
     Rio_writen(fd, buf, strlen(buf));    //line:netp:servestatic:endserve
 
     Rio_writen(fd, content, contentLength);
@@ -276,7 +301,7 @@ void doit(int fd, int thread_index, Requests *requests) {
         Thread t = threads[thread_index];
         t.http_dynamic_content_executions++;
         threads[thread_index] = t;
-        serve_dynamic(fd, filename, cgiargs);    //line:netp:doit:servedynamic
+        serve_dynamic(fd, filename, cgiargs, thread_index, requests);    //line:netp:doit:servedynamic
     }
 }
 

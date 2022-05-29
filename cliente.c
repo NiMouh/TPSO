@@ -5,165 +5,330 @@
 #include <stdbool.h>
 #include "csapp.h"
 
-#define MAX_THREADS 20
+typedef enum
+{
+    FIFO, // First In First Out
+	CONCUR, // Concurrent Groups
+} SchedulingPolicy;
 
-// Threads
-pthread_mutex_t mutex;
+char* host_name;
+int server_port;
+int max_threads;
+SchedulingPolicy scheduling_policy;
+int total_files = 0;
+char* files[2];
+int file_index = 0;
 
-// Semaphores
-sem_t sem_fila;
+pthread_t * threads;
+int * ids;
+sem_t * semaphores;
+pthread_barrier_t barrier;
+pthread_mutex_t file_comutation_mutex;
+pthread_mutex_t thread_lock;
 
-// ID Array
-int *ids;
+void * cliente (void * ids)
+{
+	while (true)
+	{
+		
+		char buffer[BUFSIZ];
+		enum CONSTEXPR {
+			MAX_REQUEST_LEN = 1024
+		};
 
+		char request[MAX_REQUEST_LEN];
+		char request_template[] = "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n";
+		struct protoent *protoent;
 
-// Create function cliente
-// client [host] [portnum] [threads] [schedalg] [filename1] [filename2]
+		in_addr_t in_addr;
+		int request_len;
+		int socket_file_descriptor;
+		ssize_t nbytes;
+		struct hostent *hostent;
+		struct sockaddr_in sockaddr_in;		
+		
+		
+		
+		int id = *((int *) ids);
+		switch (scheduling_policy)
+		{
+			case FIFO:
+			
+				printf ("Thread %d: FIFO\n", id);
+				sem_wait(&semaphores[id]);
 
-char request[MAX_REQUEST_LEN];
-char request_template[] = "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n";
-struct protoent *protoent;
+					/* Construir pedido HTTP */
+					if (total_files == 1)
+					{
+						request_len = snprintf(request, MAX_REQUEST_LEN, request_template, files[0], host_name);
+						if (request_len >= MAX_REQUEST_LEN) {
+							fprintf(stderr, "Comprimento do pedido grande: %d\n", request_len);
+							exit(EXIT_FAILURE);
+						}
+					}	
+					else
+					{
+						pthread_mutex_lock(&file_comutation_mutex);
 
+							if (file_index == 0)
+								file_index = 1;
+							else
+								file_index = 0;
+							
+							request_len = snprintf(request, MAX_REQUEST_LEN, request_template, files[file_index], host_name);
+							if (request_len >= MAX_REQUEST_LEN) {
+								fprintf(stderr, "Comprimento do pedido grande: %d\n", request_len);
+								exit(EXIT_FAILURE);
+							}
 
-char *hostname = "localhost";
-unsigned short server_port = 8080;  //default port
-char *file;
-char *fileindex = "/";
-char *filedynamic = "/cgi-bin/adder?150&100";
-char *filestatic = "/godzilla.jpg";
+						pthread_mutex_unlock(&file_comutation_mutex);
+					}
+					
+					
+					/* Construir Socket */
+					protoent = getprotobyname("tcp");
+					if (protoent == NULL) {
+						perror("getprotobyname");
+						exit(EXIT_FAILURE);
+					}
+					
+					/* Abrir Socket */
+					socket_file_descriptor = Socket(AF_INET, SOCK_STREAM, protoent->p_proto);
+					
+					/* Construir Endereco */
+					hostent = Gethostbyname(host_name);
 
-void *cliente(void *arg) {
-    char buffer[BUFSIZ];
-    enum CONSTEXPR {
-        MAX_REQUEST_LEN = 1024
-    };
+					in_addr = inet_addr(inet_ntoa(*(struct in_addr *) *(hostent->h_addr_list)));
+					if (in_addr == (in_addr_t) - 1) {
+						fprintf(stderr, "error: inet_addr(\"%s\")\n", *(hostent->h_addr_list));
+						exit(EXIT_FAILURE);
+					}
+					sockaddr_in.sin_addr.s_addr = in_addr;
+					sockaddr_in.sin_family = AF_INET;
+					sockaddr_in.sin_port = htons(server_port);
 
+					
+					/* Ligar ao Servidor */
+					Connect(socket_file_descriptor, (struct sockaddr *) &sockaddr_in, sizeof(sockaddr_in));
 
-    in_addr_t in_addr;
-    int request_len;
-    int socket_file_descriptor;
-    ssize_t nbytes;
-    struct hostent *hostent;
-    struct sockaddr_in sockaddr_in;
+					
+					/* Enviar pedido HTTP */
+					Rio_writen(socket_file_descriptor, request, request_len);
 
-    // Lock mutex
-    pthread_mutex_lock(&mutex);
+					/* Leitura do pedido HTTP */
+					while ((nbytes = Rio_readn(socket_file_descriptor, buffer, BUFSIZ)) > 0) {
+					if (DEBUG) fprintf(stderr, "debug: apos leitura de bloco\n");
 
-    /* Critic ZONE*/
-    if (arg[1] == NULL) {
-        hostname = arg[1];
-        if (arg[2] == NULL) {
-            server_port = strtoul(arg[2], NULL, 10);
-            if (arg[3] == NULL) {
-                file = arg[3];
-                else
-                file = fileindex;  //ou escolher outra filedynamic filestatic
+						Rio_writen(STDOUT_FILENO, buffer, nbytes);
+					}
 
-                //construção do pedido de http
-                request_len = snprintf(request, MAX_REQUEST_LEN, request_template, file, hostname);
-                if (request_len >= MAX_REQUEST_LEN) {
-                    fprintf(stderr, "request length large: %d\n", request_len);
-                    exit(EXIT_FAILURE);
-                }
+				if (id + 1 == max_threads)
+					sem_post(&semaphores[0]);
+				else
+					sem_post(&semaphores[id + 1]);
+				break;
+			case CONCUR:
+				pthread_mutex_lock (&thread_lock);
+				/* Construir pedido HTTP */
+				if (total_files == 1)
+				{
+					request_len = snprintf(request, MAX_REQUEST_LEN, request_template, files[0], host_name);
+					if (request_len >= MAX_REQUEST_LEN) {
+						fprintf(stderr, "Comprimento do pedido grande: %d\n", request_len);
+						exit(EXIT_FAILURE);
+					}
+				}	
+				else
+				{
+					pthread_mutex_lock(&file_comutation_mutex);
 
-                /* Build the socket. */
-                protoent = getprotobyname("tcp");
-                if (protoent == NULL) {
-                    perror("getprotobyname");
-                    exit(EXIT_FAILURE);
-                }
+						if (file_index == 0)
+							file_index = 1;
+						else
+							file_index = 0;
+						
+						request_len = snprintf(request, MAX_REQUEST_LEN, request_template, files[file_index], host_name);
+						if (request_len >= MAX_REQUEST_LEN) {
+							fprintf(stderr, "Comprimento do pedido grande: %d\n", request_len);
+							exit(EXIT_FAILURE);
+						}
 
-                //Open the socket
-                socket_file_descriptor = Socket(AF_INET, SOCK_STREAM, protoent->p_proto);
+					pthread_mutex_unlock(&file_comutation_mutex);
+				}
+				
+				
+				/* Construir Socket */
+				protoent = getprotobyname("tcp");
+				if (protoent == NULL) {
+					perror("getprotobyname");
+					exit(EXIT_FAILURE);
+				}
+				
+				/* Abrir Socket */
+				socket_file_descriptor = Socket(AF_INET, SOCK_STREAM, protoent->p_proto);
+				
+				/* Construir Endereco */
+				hostent = Gethostbyname(host_name);
 
-                /* Build the address. */
-                // 1 get the hostname address
-                hostent = Gethostbyname(hostname);
+				in_addr = inet_addr(inet_ntoa(*(struct in_addr *) *(hostent->h_addr_list)));
+				if (in_addr == (in_addr_t) - 1) {
+					fprintf(stderr, "error: inet_addr(\"%s\")\n", *(hostent->h_addr_list));
+					exit(EXIT_FAILURE);
+				}
+				sockaddr_in.sin_addr.s_addr = in_addr;
+				sockaddr_in.sin_family = AF_INET;
+				sockaddr_in.sin_port = htons(server_port);
 
-                in_addr = inet_addr(inet_ntoa(*(struct in_addr *) *(hostent->h_addr_list)));
-                if (in_addr == (in_addr_t) - 1) {
-                    fprintf(stderr, "error: inet_addr(\"%s\")\n", *(hostent->h_addr_list));
-                    exit(EXIT_FAILURE);
-                }
-                sockaddr_in.sin_addr.s_addr = in_addr;
-                sockaddr_in.sin_family = AF_INET;
-                sockaddr_in.sin_port = htons(server_port);
+				
+				/* Ligar ao Servidor */
+				Connect(socket_file_descriptor, (struct sockaddr *) &sockaddr_in, sizeof(sockaddr_in));
+				
+				/* Enviar pedido HTTP */
+				Rio_writen(socket_file_descriptor, request, request_len);
 
-                /* Ligar ao servidor */
-                Connect(socket_file_descriptor, (struct sockaddr *) &sockaddr_in, sizeof(sockaddr_in));
+				/* Leitura do pedido HTTP */
+				while ((nbytes = Rio_readn(socket_file_descriptor, buffer, BUFSIZ)) > 0) {
+				if (DEBUG) fprintf(stderr, "debug: apos leitura de bloco\n");
 
-                /* Send HTTP request. */
-                Rio_writen(socket_file_descriptor, request, request_len);
-              
-              // Leitura do corpo da resposta
-              if (DEBUG) fprintf(stderr, "debug: antes da primeira leitura\n");
+					Rio_writen(STDOUT_FILENO, buffer, nbytes);
+				}
+				pthread_mutex_unlock (&thread_lock);
+				pthread_barrier_wait(&barrier);
+				break;
+		}
 
-              while ((nbytes = Rio_readn(socket_file_descriptor, buffer, BUFSIZ)) > 0) {
-                  if (DEBUG) fprintf(stderr, "debug: apos leitura de bloco\n");
+		Close(socket_file_descriptor);
+	}
 
-                  Rio_writen(STDOUT_FILENO, buffer, nbytes);
-              }
-
-              if (DEBUG) fprintf(stderr, "debug: apos ultima leitura\n");
-
-              Close(socket_file_descriptor);
-
-            }
-        }
-    }
-    /* END OF ZONE*/
-    // Unlock mutex
-    pthread_mutex_unlock(&mutex);
-
-    return NULL;
+	return NULL;
 }
 
-int main(int argc, char **argv) {
-    int N = atoi(argv[3]);
+bool parse_arguments (int ARGUMENTS_AMOUNT, char ** arguments)
+{
+	if (ARGUMENTS_AMOUNT < 6)
+	{
+		fprintf(stderr, "Uso: %s <hospedeiro> <porta> <nr_threads> <alg_escalonamento> <ficheiro1> (<ficheiro2>)\n", arguments[0]);
+		return true;
+	}
 
-    // Check if N is less than MAX_THREADS
-    if (N > MAX_THREADS) {
-        // If N is greater than MAX_THREADS, print error message
-        printf("N must be less than %d\n", MAX_THREADS);
-        N = MAX_THREADS;
-    }
-  
-    // Declare a thread array with N elements malloc
-    pthread_t *threads = malloc(N * sizeof(pthread_t));
+	host_name = arguments[1];
+	server_port = atoi(arguments[2]);
 
-    // initialize mutex
-    pthread_mutex_init(&mutex, NULL);
-    sem_init(&sem_fila, 0, 0);
+	if (server_port <= 0)
+	{
+		fprintf(stderr, "Erro: porta invalida\n");
+		return true;
+	}
+	
+	max_threads = atoi(arguments[3]);
+	if (max_threads <= 0)
+	{
+		fprintf(stderr, "Erro: Numero de threads deve ser maior que 0.\n");
+		return true;
+	}
 
-    // Declare an id array with N elements malloc
-    *ids = malloc(N * sizeof(int));
-    // for loop to give values to ids
-    for (int i = 0; i < N; i++) {
-        ids[i] = i;
-    }
+	if (strcmp(arguments[4], "FIFO") == 0)
+	{
+		scheduling_policy = FIFO;
+	}
+	else if (strcmp(arguments[4], "CONCUR") == 0)
+	{
+		scheduling_policy = CONCUR;
+	}
+	else
+	{
+		fprintf(stderr, "Erro: Algoritmo de escalonamento invalido.\n");
+		fprintf(stderr, "Opcoes: FIFO ou CONCUR\n");
+		return true;
+	}
 
-    // create N semaphores
-    for (int i = 0; i < N; i++) {
-        sem_init(&sem_fila, 0, id[i]);
-    }
-    // initialize loops
-    for (int i = 0; i < N; i++) {
-        // sem_wait semaphore id
-        sem_wait(&sem_fila);
-        // Create thread that each send and receive one request
-        pthread_create(&threads[i], NULL, cliente,
-        void *argv);
-        // sem_post semaphore id + 1
-        sem_post(&sem_fila + 1);
-    }
-    // for cicle to wait all threads
-    for (int i = 0; i < N; i++) {
-        pthread_join(threads[i], NULL);
-    }
+	files[0] = malloc (strlen(arguments[5]) + 1);
+	strcpy(files[0], arguments[5]);
+	total_files++;
 
-    // destroy mutex
-    pthread_mutex_destroy(&mutex);
-    sem_destroy(&sem_fila);
+	if (ARGUMENTS_AMOUNT == 7)
+	{
+		files[1] = malloc (strlen(arguments[6]) + 1);
+		strcpy(files[1], arguments[6]);
+		total_files++;
+	}
 
-    exit(EXIT_SUCCESS);
+	return false;
+}
+
+bool create_semaphores ()
+{
+	semaphores = malloc (max_threads * sizeof(sem_t));
+	if (semaphores == NULL)
+	{
+		fprintf(stderr, "Erro: Nao foi possivel alocar memoria para os semaforos.\n");
+		return false;
+	}
+
+	sem_init(&semaphores[0], 0, 1);
+
+	for (int i = 1; i < max_threads; i++)
+	{
+		sem_init(&semaphores[i], 0, 0);
+	}
+
+	return true;
+}
+
+bool create_threads ()
+{
+	threads = malloc (max_threads * sizeof (pthread_t));
+	if (threads == NULL)
+	{
+		fprintf(stderr, "Erro: Nao foi possivel alocar memoria para as threads.\n");
+		return false;
+	}
+
+	ids = malloc (max_threads * sizeof (int));
+	if (ids == NULL)
+	{
+		fprintf(stderr, "Erro: Nao foi possivel alocar memoria para os ids das threads.\n");
+		return false;
+	}
+
+	for (int index = 0; index < max_threads; index++)
+	{
+		ids[index] = index;
+		if (pthread_create(&threads[index], NULL, &cliente, &ids[index]) != 0)
+		{
+			fprintf(stderr, "Erro: Nao foi possivel criar a thread %d.\n", index);
+			return false;
+		}
+	}
+	return true;
+}
+
+
+// client [host] [portnum] [threads] [schedalg] [filename1] [filename2]
+int main (int ARGUMENTS_AMOUNT, char ** arguments)
+{
+
+	if (parse_arguments(ARGUMENTS_AMOUNT, arguments))
+		exit(EXIT_FAILURE);
+	
+	pthread_mutex_init(&file_comutation_mutex, NULL);
+	pthread_mutex_init(&thread_lock, NULL);
+
+	switch (scheduling_policy)
+	{
+		case FIFO:
+			if(!create_semaphores())
+				exit(EXIT_FAILURE);
+			break;
+		case CONCUR:
+			pthread_barrier_init(&barrier, NULL, max_threads);
+			break;
+	}
+
+	if (!create_threads())
+		exit(EXIT_FAILURE);
+	
+	while (true);
+
+	exit(EXIT_SUCCESS);
 }
