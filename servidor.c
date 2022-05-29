@@ -173,6 +173,8 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, int thread_index, Requ
 {
     char buf[MAXLINE], *emptylist[] = {NULL};
 
+    printf("Filename: %s\n", filename);
+
     int pipefd[2];
 
     /*Paul Crocker

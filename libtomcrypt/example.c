@@ -56,7 +56,7 @@ int main(){
     {
         //POW example
         unsigned long k=0;
-        char *powMsg="abcsfsrgfresgdrsgdsgdtgdtghdthdt";
+        char *powMsg="teste123";
         //allocate space for a long integer (10 digits) + 1 for any terminating null character necessary
         char *powStr=(char*) malloc( strlen(powMsg) + 10 + 1);
     
