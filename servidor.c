@@ -174,6 +174,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, int thread_index, Requ
     char buf[MAXLINE], *emptylist[] = {NULL};
 
     printf("Filename: %s\n", filename);
+    printf("CGIargs: %s\n", cgiargs);
 
     int pipefd[2];
 
@@ -187,7 +188,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, int thread_index, Requ
         setenv("QUERY_STRING", cgiargs, 1);    //line:netp:servedynamic:setenv
         //Dup2 (fd, STDOUT_FILENO);	/* Redirect stdout to client *///line:netp:servedynamic:dup2
         Dup2(pipefd[1], STDOUT_FILENO);
-
+        
         Execve(filename, emptylist, environ);    /* Run CGI program *///line:netp:servedynamic:execve
     }
     close(pipefd[1]);
@@ -204,9 +205,12 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, int thread_index, Requ
 
     long time_difference = (end.tv_sec - start.tv_sec);
 
+    printf ("Context: %s\n", content);
+
 
     /* Generate the HTTP response */
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");    //line:netp:servestatic:beginserve
+    sprintf(buf, "----------------------------------------------------\n");
+    sprintf(buf, "%sHTTP/1.0 200 OK\r\n", buf);    //line:netp:servestatic:beginserve
     sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
     sprintf(buf, "%sContent-length: %d\r\n", buf, contentLength);
     sprintf(buf, "%sContent-type: text/html\r\n\r\n", buf);

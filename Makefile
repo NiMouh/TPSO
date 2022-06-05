@@ -10,7 +10,7 @@ CFLAGS = -g -Wall -I .
 # Others systems will probably require something different.
 LIB = -lpthread
 
-all: servidor adder cliente hashexample
+all: servidor adder hashexample cliente 
 
 servidor: servidor.c csapp.o
 	$(CC) $(CFLAGS) -o servidor servidor.c csapp.o $(LIB)
@@ -25,7 +25,7 @@ hashexample:
 	(cd libtomcrypt ; make)
 
 cliente: cliente.c
-	$(CC) $(CFLAGS) -o cliente cliente.c csapp.o $(LIB)
+	$(CC) $(CFLAGS) -o cliente cliente.c csapp.o ./libtomcrypt/sha1.o $(LIB)
 
 clean:
 	rm -f *.o servidor cliente *~

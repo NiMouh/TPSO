@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include "csapp.h"
+#include "libtomcrypt/tomcrypt_hash.h"
 
 typedef enum
 {
@@ -25,6 +26,52 @@ sem_t * semaphores;
 pthread_barrier_t barrier;
 pthread_mutex_t file_comutation_mutex;
 pthread_mutex_t thread_lock;
+
+bool check_hash_result(char* hash, int difficulty, char* msg)
+{
+	unsigned char tmp[20];
+	hash_state md;
+	char *powStr=(char*) malloc( strlen(msg) + 10 + 1);
+	sprintf(powStr, "%s%lu", msg, difficulty);
+
+	sha1_init(&md);
+	sha1_process(&md, (unsigned char *)powStr, (unsigned long)strlen(powStr));
+	sha1_done(&md, tmp);
+
+	int checks = 0;
+
+	for (int i=0; i< difficulty; i++) {
+		if (tmp[i] == 0) {
+			checks++;
+		}
+	}
+
+	if (checks == difficulty) {
+		if(strcmp(hash, powStr) == 0)
+			return true;
+	}
+	
+	return false;
+
+}
+
+int retrieve_nonce (char* nonce_ptr)
+{
+	char *p;
+	int nonce;
+	p = strchr(nonce_ptr, ':');
+	p++;
+	nonce = atoi(p);
+	return nonce;
+}
+
+char * retrieve_hash (char * hash_pointer)
+{
+	char *p;
+	p = strchr(hash_pointer, ':');
+	p++;
+	return p;
+}
 
 void * cliente (void * ids)
 {
@@ -118,8 +165,27 @@ void * cliente (void * ids)
 					/* Leitura do pedido HTTP */
 					while ((nbytes = Rio_readn(socket_file_descriptor, buffer, BUFSIZ)) > 0) {
 					if (DEBUG) fprintf(stderr, "debug: apos leitura de bloco\n");
+						if(strstr(buffer, "Proof of Work") != NULL)
+						{
+							char* nonce_ptr = strstr(buffer, "Nonce: ");
+							char* hash_ptr = strstr(buffer, "Hash: ");
+							int nonce = retrieve_nonce(nonce_ptr);
+							printf ("[%d]\n", nonce);
+							char* hash = retrieve_hash(hash_ptr);
+							hash[strlen(hash) - 3] = '\0';
+							printf ("[%s]\n", hash);
+							// COMPARAR RESULTADO E MOSTRAR
+							/*
+							if(check_hash_result(hash, nonce, strtok(files[0], "&")))
+								printf("\nSUCESSO");
+							else
+								printf("\nFALHA");
+								*/
+						}
+						printf("%s\n", buffer);
+						
 
-						Rio_writen(STDOUT_FILENO, buffer, nbytes);
+							//Rio_writen(STDOUT_FILENO, buffer, nbytes);
 					}
 
 				if (id + 1 == max_threads)
