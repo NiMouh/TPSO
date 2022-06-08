@@ -205,8 +205,6 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, int thread_index, Requ
 
     long time_difference = (end.tv_sec - start.tv_sec);
 
-    printf ("Context: %s\n", content);
-
 
     /* Generate the HTTP response */
     sprintf(buf, "----------------------------------------------------\n");
@@ -272,9 +270,13 @@ void doit(int fd, int thread_index, Requests *requests) {
     char filename[MAXLINE], cgiargs[MAXLINE];
     rio_t rio;
 
+    
     /* Read request line and headers */
     Rio_readinitb(&rio, fd);
+    //printf("FD:%d\n CNT:%d\n BUF:%s\n BUFPTR:%s \n", rio.rio_fd, rio.rio_cnt, rio.rio_buf, rio.rio_bufptr);
+    //printf("READING REQUEST\n");
     Rio_readlineb(&rio, buf, MAXLINE);    //line:netp:doit:readrequest
+    //printf("HMM\n");
     sscanf(buf, "%s %s %s", method, uri, version);    //line:netp:doit:parserequest
     
     if (strcasecmp(method, "GET")) {                //line:netp:doit:beginrequesterr
@@ -295,6 +297,7 @@ void doit(int fd, int thread_index, Requests *requests) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
             return;
         }
+        
         Thread t = threads[thread_index];
         t.http_static_content_executions++;
         threads[thread_index] = t;
@@ -321,9 +324,9 @@ ContentType get_content_type (int client_fd)
     sscanf(buf, "%s %s %s", method, uri, version);    //line:netp:doit:parserequest
 
     if (!strstr(uri, "cgi-bin"))
-        return DYNAMIC;
-    else
         return STATIC;
+    else
+        return DYNAMIC;
 }
 
 void * thread_startup (void * position)
@@ -333,7 +336,6 @@ void * thread_startup (void * position)
         pthread_mutex_lock (&lock_list_request);
 
             bool list_is_empty;
-
             if (scheduling_policy == FIFO)
                 list_is_empty = is_list_empty (*requests);
             else
@@ -352,8 +354,6 @@ void * thread_startup (void * position)
 
                 long time_difference = (end.tv_sec - start.tv_sec);
 
-                (*requests)->dispatch_time = time_difference;
-
                 Thread thread = threads[(int) position];
                 thread.http_request_executions++;
                 threads[(int) position] = thread;
@@ -366,6 +366,7 @@ void * thread_startup (void * position)
                 {
                     case FIFO:
                         client_fd = (*requests)->client_fd;
+                        (*requests)->dispatch_time = time_difference;
 
                         doit (client_fd, position, requests);
                         Close(client_fd);
@@ -376,8 +377,9 @@ void * thread_startup (void * position)
                         if (!is_list_empty (requests[0]))
                         {
                             client_fd = requests[0]->client_fd;
-
+                            requests[0]->dispatch_time = time_difference;
                             doit (client_fd, position, requests);
+                            printf("asdasda\n");
                             Close(client_fd);
 
                             requests[0] = remove_request (client_fd, requests[0]);
@@ -385,6 +387,7 @@ void * thread_startup (void * position)
                         else
                         {
                             client_fd = requests[1]->client_fd;
+                            requests[1]->dispatch_time = time_difference;
 
                             doit (client_fd, position, requests);
                             Close(client_fd);
@@ -396,6 +399,7 @@ void * thread_startup (void * position)
                         if (!is_list_empty (requests[1]))
                         {
                             client_fd = requests[1]->client_fd;
+                            requests[1]->dispatch_time = time_difference;
 
                             doit (client_fd, position, requests);
                             Close(client_fd);
@@ -405,6 +409,7 @@ void * thread_startup (void * position)
                         else
                         {
                             client_fd = requests[0]->client_fd;
+                            requests[0]->dispatch_time = time_difference;
 
                             doit (client_fd, position, requests);
                             Close(client_fd);

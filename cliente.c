@@ -32,7 +32,7 @@ bool check_hash_result(char* hash, int difficulty, char* msg)
 	unsigned char tmp[20];
 	hash_state md;
 	char *powStr=(char*) malloc( strlen(msg) + 10 + 1);
-	sprintf(powStr, "%s%lu", msg, difficulty);
+	sprintf(powStr, "%s%u", msg, difficulty);
 
 	sha1_init(&md);
 	sha1_process(&md, (unsigned char *)powStr, (unsigned long)strlen(powStr));

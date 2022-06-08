@@ -1,10 +1,10 @@
 CC = gcc
 
 #Release Flags
-#CFLAGS = -O2 -Wall -I .
+CFLAGS = -O2 -Wall -I .
 
 #DebugFlags
-CFLAGS = -g -Wall -I .
+#CFLAGS = -g -Wall -I .
 
 # This flag includes the Pthreads library on a Linux box.
 # Others systems will probably require something different.
